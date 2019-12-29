@@ -127,7 +127,7 @@ public protocol PlayerPlaybackDelegate: AnyObject {
 // MARK: - Player
 
 /// ▶️ Player, simple way to play and stream media
-open class Player: UIViewController {
+public class Player: UIViewController {
 
     /// Player delegate.
     open weak var playerDelegate: PlayerDelegate?
@@ -326,7 +326,7 @@ open class Player: UIViewController {
             }
         }
     }
-    internal var _avplayer: AVPlayer = AVPlayer()
+    public var _avplayer: AVPlayer = AVPlayer()
     internal var _playerItem: AVPlayerItem?
 
     internal var _playerObservers = [NSKeyValueObservation]()
@@ -341,6 +341,7 @@ open class Player: UIViewController {
 
     // Boolean that determines if the user or calling coded has trigged autoplay manually.
     internal var _hasAutoplayActivated: Bool = true
+    internal var _isInBackground: Bool = false
 
     // MARK: - object lifecycle
 
@@ -664,7 +665,9 @@ extension Player {
         }
 
         self._avplayer.replaceCurrentItem(with: self._playerItem)
-
+        if #available(iOS 10.0, *) {
+            self._avplayer.automaticallyWaitsToMinimizeStalling = false
+        }
         // update new playerItem settings
         if self.playbackLoops {
             self._avplayer.actionAtItemEnd = .none
@@ -718,27 +721,35 @@ extension Player {
     // MARK: - UIApplication handlers
 
     @objc internal func handleApplicationWillResignActive(_ aNotification: Notification) {
+        self._isInBackground = true
+        self.playerView.player = nil
         if self.playbackState == .playing && self.playbackPausesWhenResigningActive {
             self.pause()
         }
     }
 
     @objc internal func handleApplicationDidBecomeActive(_ aNotification: Notification) {
+        self._isInBackground = false
+        self.playerView.player = self._avplayer
         if self.playbackState == .paused && self.playbackResumesWhenBecameActive {
             self.play()
         }
     }
 
     @objc internal func handleApplicationDidEnterBackground(_ aNotification: Notification) {
+        self._isInBackground = true
+        self.playerView.player = nil
         if self.playbackState == .playing && self.playbackPausesWhenBackgrounded {
             self.pause()
         }
     }
 
     @objc internal func handleApplicationWillEnterForeground(_ aNoticiation: Notification) {
-        if self.playbackState != .playing && self.playbackResumesWhenEnteringForeground {
+        self._isInBackground = false
+        self.playerView.player = self._avplayer
+        /*if self.playbackState != .playing && self.playbackResumesWhenEnteringForeground {
             self.play()
-        }
+        }*/
     }
 
 }
@@ -790,7 +801,9 @@ extension Player {
             case .readyToPlay:
                 fallthrough
             @unknown default:
-                strongSelf._playerView.player = self?._avplayer
+                if !strongSelf._isInBackground {
+                    strongSelf._playerView.player = self?._avplayer
+                }
                 break
             }
         })
